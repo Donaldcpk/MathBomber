@@ -1,0 +1,61 @@
+最完整、最仔細、經過 Debug 優化後的 5 大核心模組綜合指令（Prompts）。你可以直接按順序複製黑底框內的全英文提示詞，交給 Cursor Pro (Google Ultra) 執行生成：📦 指令 1：時間管理、自訂參數設定與右上角螺旋縮圈引擎 (Sudden Death)優化點 (Debug)：防止 Roblox 浮點數導致縮圈方塊錯位。指令中強制要求使用整數網格矩陣進行坐標比對，並在伺服器啟動時自動計算好 $75 \times 50$ 的順時針螺旋路徑隊列，確保 Sudden Death 啟動時零延遲且絕對精準。PlaintextWrite a complete, optimized Roblox Server Script to handle the Match Timer, Custom Settings, and a traditional Top-Right "Sudden Death" shrinking grid mechanic for a 2.5D Bomberman game.
+
+Requirements:
+1. Customizable Match Configuration: Create a Settings Module Script supporting adjustable match durations: 3, 4, 5, 6, or 7 minutes (Default to 5 minutes). Maintain a countdown clock synced to all players' HUDs via a Replica/RemoteEvent.
+2. Victory Check: If the victory condition (e.g., all enemies eliminated or PVE Boss defeated) is not met before the timer hits 0, trigger the "Sudden Death" mode.
+3. Top-Right Spiral Shrinking Grid Engine (Sudden Death):
+   - Grid boundaries are strictly 75 columns (X) by 50 rows (Z). Cell size is 4x4 studs on the XZ plane.
+   - Debug Optimization: Pre-calculate an array containing the exact sequence of grid coordinates starting from the top-right corner (75, 50) spiraling inward clockwise layer by layer towards the center.
+   - Every 0.8 seconds after Sudden Death begins, drop an un-destructible, solid steel block from the sky onto the next grid cell in the pre-calculated sequence. Center it precisely at (X*4 - 2, Z*4 - 2) to avoid floating-point alignment bugs.
+   - Physical Collision Handling: Any player standing on a tile at the exact moment a Sudden Death block lands must take instant fatal damage (Elimination). Once landed, the cell is permanently blocked, updating pathfinding.
+Provide the complete Luau script with no placeholders or code cuts.
+📥 指令 2：10 種 $75 \times 50$ 大型動態地圖加載器（含優化版 Map 5 空洞與 Map 6 坐標高壓轟炸）優化點 (Debug)：Map 5 的空洞化如果直接刪除地板會導致地圖邊緣漏光或物理穿透錯誤，指令中要求改為將地板替換為「無碰撞、半透明黑洞特效 Part」，玩家踩上去觸發 Touched 瞬間致死。Map 6 增加計時防重疊機制，確保每 10 秒的轟炸順序不衝突。PlaintextWrite a comprehensive Roblox Server Script to generate and manage 10 unique dynamic map environments, each sized at least 75x50 cells (cell size 4x4 studs). Implement a PVE difficulty progression lock where maps must be unlocked in PVE before being available in the random PVP map rotation pool.
+
+Map Mechanics to fully code:
+- Map 1 (Classic Grid): Static steel blocks placed at every alternating odd grid cell.
+- Map 2 (Conveyor Factory): Conveyor parts using AssemblyLinearVelocity to push bombs and players linearly.
+- Map 3 (Kaleidoscope Maze): Fixed 45-degree solid mirrors ('/' and '\') and semi-transparent Prism Splitters that bend/split blast waves.
+- Map 4 (Patrol Matrix): Huge blocks patrolling via TweenService on arithmetic intervals, squishing anything trapped against walls.
+- Map 5 (Arithmetic Grid Collapse - Optimized): Unstable floor tiles. When caught in a bomb radius, these tiles shake for 0.5 seconds, then change into a non-collidable, semi-transparent lethal "Void Pit" part. Any character touching this void tile triggers instant elimination.
+- Map 6 (Coordinate Blitz Temple - Optimized): 15 seconds after the match starts, initialize a repeating loop. Every 10 seconds, the server announces 4 raw grid coordinate strings (e.g. "(12, 45)", "(60, 20)") to the client HUDs. After a 2-second countdown, drop heavy bombs with a strict blast radius of 3 grid units onto those 4 exact cells. Prevent overlapping or skipped loops using state flags.
+- Map 7 (Factor Curse Chamber): Floor grids display glowing numbers, spawning "Factor Curse Bombs".
+- Map 8 (Terminal Blast Island): Environmental modifier enforcing mandatory secondary tail explosions on all bombs, alongside shrinking perimeter grids.
+- Map 9 (Chaotic Variable X Core): Max spawn rates of '?' curse items and rapid sky bombardment.
+- Map 10 (Ultimate Euclidean Arena): A chaotic mega-map combining conveyors, mirrors, patrol blocks, voids, and coordinate blitzes.
+Ensure full implementation with clean Luau modular methods.
+📥 指令 3：萬花筒折射與末端二次爆轟引擎 (Explosion & Multi-Stage Blast Engine)優化點 (Debug)：處理 45° 鏡子時最怕兩面鏡子對視導致伺服器無限遞迴死機（Infinite Loop）。指令中加入了嚴格的 MaxRecursionDepth = 50 熔斷機制。同時確保末端二次爆轟的子炸彈有獨立的 Owner 屬性標記，防止擊殺算錯人。PlaintextWrite an advanced, recursive Server-Side Blast Engine in Luau to compute grid-based cross-shaped bomb explosions that interact with optical mirrors and handle terminal multi-stage bomb logic.
+
+Requirements:
+1. Base Matrix Raycasting: Upon bomb detonation, calculate fire propagation along 4 vectors (UP, DOWN, LEFT, RIGHT) from the origin cell up to a maximum tile radius 'maxRadius'. Ensure all position lookups snap onto integer coordinates to prevent missed tiles.
+2. Optical Interference Logic:
+   - "Mirror_ForwardSlash" ('/'): Change direction of the blast ray: RIGHT to UP, LEFT to DOWN, UP to RIGHT, DOWN to LEFT. Recurse.
+   - "Mirror_BackSlash" ('\'): Change direction of the blast ray: RIGHT to DOWN, LEFT to UP, UP to LEFT, DOWN to RIGHT. Recurse.
+   - "PrismSplitter": The main blast ray passes through unaltered, BUT simultaneously branches two new perpendicular rays at 90-degree offsets.
+3. Item 10 - Tail Splitter Engine (Optimized): If a bomb is initialized with `IsTailSplitter = true`, cache the exact boundary tiles (the end coordinates where the explosion paths terminate). Exactly 0.5 seconds after the first explosion clears, programmatically spawn 4 secondary mini-bombs at those end coordinates. These mini-bombs must detonate instantly, casting a secondary cross-shaped blast matrix (radius of 2 tiles) to catch escaping targets. Inherit the original bomb's Owner property for proper score attribution.
+4. Anti-Infinite Loop Guard: Clamp the maximum recursion depth to 50 to prevent infinite mirroring loop crashes. Apply lethal damage using workspace:GetPartsInPart with OverlapParams.
+📥 指令 4：高級道具系統模組（含自動放彈詛咒、手動多彈遙控、肉身穿彈水、中心對稱置換儀）優化點 (Debug)：在 Roblox 中實現「量子穿彈水」需要動態修改碰撞。如果直接改 CanCollide 會導致炸彈掉落世界底端。指令中指定使用 Roblox 官方最穩定的 RegisterCollisionGroup 機制，在伺服器啟動時建立 Players 和 ActiveBombs 組，吃藥時動態關閉它們之間的碰撞，時間到自動還原，極其安全。PlaintextWrite a complete Server Script and Client Input LocalScript to implement the execution logic for 10 modular items, focusing on custom interaction handlers.
+
+Setup & Initialization (Debug Guard): At server startup, programmatically register two CollisionGroups: "PhasePlayers" and "ActiveBombs".
+
+Items to Implement:
+1. Item 1 - Curse of Variable X (Bad Item): When collected, randomly apply 1 of 3 status updates for 6 seconds:
+   - "Bomb Diarrhea": Force WalkSpeed to 24 and force-spawn an active bomb at the feet every 0.4 seconds automatically.
+   - "Inverse Vector": Remap client controls so WASD inputs are completely flipped.
+   - "Absolute Zero": Reduce WalkSpeed to 5. Clean up safely after 6 seconds.
+2. Item 2 - Coordinate Blink Boots (LeftShift): Execute a 3-grid-cell instantaneous forward teleport along the player's moving directional vector. Allow bypassing bombs and destructible blocks safely.
+3. Item 3 - Kaleidoscope Pocket Mirror (Q Key): Spawn a temporary 45-degree mirror part exactly 1 grid cell ahead of the player. The mirror lasts for 4 seconds, then fades out and destroys itself.
+4. Item 4 - Vector Rocket Kick: Passive perk. When a player walks into an active bomb, push the bomb forward along that linear grid coordinate track at a constant velocity until it collides with an obstacle, snapping neatly to the grid center.
+5. Item 5 - Matrix Remote Detonator (Optimated): Bombs dropped by this player do NOT detonate on an automatic timer. The player can lay multiple bombs on the field up to their maximum bomb limit. Maintain a server-side array of their active bombs. When the player presses 'E', fire a RemoteEvent to trigger instant simultaneous detonation for ALL their tracked bombs on the field.
+6. Item 6 - Quantum Phase Fluid (Optimated): Grant a 6-second translucent perk. Temporarily assign the player's character parts to "PhasePlayers" and active bombs to "ActiveBombs", set their collision group collidable status to false. This allows walking THROUGH active bombs without altering bomb positions or causing them to fall through the map. Revert groups after 6 seconds.
+7. Items 7 & 8: Standard permanent progression modifiers (+1 Blast Radius, +1 Simultaneous Bomb limit).
+8. Item 9 - Central Symmetry Swapper (Space Bar): Captures player position (P1) and a targeted grid center up to 3 cells away as the Symmetry Midpoint (C). Compute destination tile: P2 = 2 * C - P1. Scan cell P2; if an opponent is present, instantly swap their CFrame positions. If empty, teleport the attacker to P2.
+📥 指令 5：真實 CSV 題庫解析引擎與幽靈復仇機關系統優化點 (Debug)：你的 CSV 檔案（如 Answer Key S1-3 - S1ANS01-12.csv）結構中，列標題包含 1A01中文答案、1A01英文答案，行名為 Q1 到 Q192。指令中精確指定了這個數據結構解析邏輯，確保 AI 生成的 Lua 模組能完美讀取你的 CSV 轉檔，並防止因為空單元格（Nil）造成 UI 崩潰。PlaintextWrite a complete Roblox Server Module and Client ScreenGui LocalScript to establish the "CSV Math Database Parser" and the "Ghost Revenge Loop".
+
+Requirements:
+1. CSV Database Parser (ModuleScript): Structure the code to interpret data extracted from the user's Grade 1-3 Answer Key CSV layout (matching column headers like "1A01中文答案", "1A01英文答案", "3B11中文答案" and row keys like "Q1", "Q2" up to "Q192"). Map these questions to their respective Roblox Image AssetIDs. Include logic to handle empty/nil cells gracefully without crashing the UI.
+2. Ghost Transition & Quiz Screen: When a player is eliminated in PVP, turn their character into a transparent floating Ghost. Open a full-screen ScreenGui presenting question images selected from the database according to the current map tier.
+3. Revenge Token Mechanics: When the ghost player clicks the correct TextButton answer (A, B, C, or D) validated by a Server RemoteFunction, award them 1 "Revenge Token" and display the next question.
+4. Environmental Pranks (Token Spending): Allow the ghost to click HUD action items to spend tokens to sabotage living players:
+   - Spend 1 Token: Invert the running vector of a targeted Map 2 Conveyor Belt.
+   - Spend 1 Token: Double the movement velocity of a Map 4 Moving Block for 4 seconds.
+   - Spend 2 Tokens: Instantly force a Map 6 "Coordinate Blitz" targeted right onto the current grid cell position of the living player who eliminated them.

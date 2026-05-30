@@ -1,0 +1,166 @@
+這是一份為你的配備（Mac Mini + Cursor Pro + Google Ultra）量身定制的**遊戲完整規劃書與 MVP（最小可行性產品）實踐方案**。
+
+我們遵循你的開發原則：**不在此直接寫代碼**，而是由我幫你完成整體的架構設計、數據流規劃，並為你寫出**可以直接複製給 Cursor Pro 的高精確度提示詞（Prompts）**，讓 Google Ultra 模型為你產出完美的代碼。
+
+---
+
+# 🎮 炸彈人數學對戰遊戲：整體規劃書
+
+## 一、 遊戲核心循環 (Core Game Loop)
+
+遊戲由兩個核心區域組成，通過「金幣與裝備數據」緊密相連：
+
+1. **玩法 B (PVE 刷題練級區)**：單人或合作模式。玩家在地圖上放炸彈清除障礙，擊中 TSA/初中 Boss。Boss 破防後彈出數學題，答對獲得金幣並對 Boss 造成傷害。
+2. **玩法 A (PVP 即時對戰區)**：多人實時對戰。玩家使用在玩法 B 中賺取的金幣，在商店購買高級炸彈（如定時炸彈、遙控炸彈）、速度鞋、護盾等裝備，進入競技場互相廝殺，贏取榮譽排名。
+
+```
+[進入遊戲] ──> [玩法 B: PVE 炸 Boss 答題] ──> [獲得金幣]
+                     ^                               │
+                     │                               v
+               [提升實力/繼續刷錢] <── [玩法 A: PVP 競技場對戰] <── [商店購買高級裝備]
+
+```
+
+## 二、 系統架構與數據流 (System Architecture)
+
+* **前端客戶端 (Client)**：負責玩家移動、炸彈動畫、UI 彈窗顯示（題目圖片與 A/B/C/D 按鈕）、音效。
+* **後端伺服器 (Server)**：負責炸彈傷害判定、Boss 狀態控制（定格/恢復）、驗證答案是否正確、發放金幣。
+* **數據持久化 (DataStore)**：存檔系統。確保玩家在 PVE 賺到的錢，在切換到 PVP 地圖時依然存在。
+
+---
+
+# 🧪 MVP (最小可行性產品) 階段範疇
+
+為了快速驗證核心玩法，我們將範疇縮小至 **TSA 的 160 題**：
+
+1. **單人 PVE 地圖**：一個簡單的網格地圖，包含可炸毀的磚塊。
+2. **一個 TSA Boss**：血量 500，被炸到後定格並亮出 TSA 題目。
+3. **基礎經濟系統**：答對題目加金幣，金幣顯示在右上角排行榜（leaderstats）。
+4. **暫不加入商店與 PVP**：先打通「炸彈人 $\rightarrow$ 炸 Boss $\rightarrow$ UI 出題 $\rightarrow$ 答題驗證 $\rightarrow$ 拿錢扣血」的黃金閉環。
+
+---
+
+# 🛠️ MVP 實踐步驟與 Cursor 精確提示詞
+
+請按照以下五個步驟，依序將提示詞複製給 Cursor Pro 執行。
+
+### 步驟 1：在 Roblox 上傳 160 張 TSA 圖片並獲取雲端 AssetID
+
+1. 在 Roblox Studio 中，打開 **View -> Asset Manager**。
+2. 點擊 **Bulk Import**，選取你本地 `TSA/2024TSA/` 和 `TSA/2025TSA/` 裡的所有 160 張圖片上傳。
+3. 上傳後，全選這些圖片，右鍵點擊把它們插入到遊戲中（或者將它們放進 `ReplicatedStorage` 的一個名為 `TSA_Images` 的資料夾內），以便我們用代碼讀取它們的雲端 `rbxassetid://`。
+
+打開 **Cursor Pro**，創建一個新對話，提交以下提示詞獲取工序腳本：
+
+```text
+【Cursor 提示詞 1：Roblox Studio 命令列抓取 AssetID】
+I am developing a Roblox game on my Mac Mini. I have uploaded 160 TSA math question images to Roblox Studio. I placed all these uploaded Decal/Image objects inside a Folder named "TSA_Images" under game.ReplicatedStorage. The names of these objects are like "TSA2024Q1", "TSA2025Q48", etc.
+
+Please write a Luau script that I can paste into the Roblox Studio Command Bar. The script should:
+1. Loop through all objects inside game.ReplicatedStorage.TSA_Images.
+2. Extract their name and their corresponding Texture/Image ID (formatted as "rbxassetid://数字").
+3. Print them in the Output window in a clean format like: TSA2024Q1,rbxassetid://12345678
+
+```
+
+*執行完後，將 Roblox Output 視窗打印出來的 160 行數據複製，在本地存成一個 `roblox_ids.txt`。*
+
+---
+
+### 步驟 2：本地數據與答案配對（Python 自動化）
+
+由於你目前沒有給出 TSA 的具體答案文本，你可以先讓 Cursor 寫一個 Python 腳本，自動讀取 `roblox_ids.txt`，並為這 160 題隨機（或按規律）生成 A/B/C/D 答案，並導出為 Roblox 的題庫模組。
+
+將以下提示詞發給 **Cursor Pro**：
+
+```text
+【Cursor 提示詞 2：Python 題庫生成器】
+I am on a Mac Mini. I have a text file named "roblox_ids.txt" containing 160 lines of text, formatted as:
+TSA2024Q1,rbxassetid://12345678
+TSA2025Q20,rbxassetid://87654321
+
+Please write a Python script that reads this file. For each question, it should automatically parse the year (e.g., "2024TSA" or "2025TSA") and the question number (e.g., "Q1"). Then, automatically assign a random correct answer from ("A", "B", "C", "D") for now as a placeholder.
+
+Finally, the Python script should output a beautifully formatted Luau ModuleScript text file named "TSADatabase.lua" that looks exactly like this:
+
+local TSADatabase = {
+    ["2024TSA"] = {
+        ["Q1"] = { ImageId = "rbxassetid://12345678", Answer = "A" },
+        -- ... and so on
+    },
+    ["2025TSA"] = {
+        ["Q20"] = { ImageId = "rbxassetid://87654321", Answer = "B" },
+    }
+}
+return TSADatabase
+
+```
+
+*在 Mac 終端機運行該 Python 腳本。得到代碼後，在 Roblox Studio 的 `ReplicatedStorage` 新建一個 `ModuleScript`，命名為 `TSADatabase`，把代碼貼進去。*
+
+---
+
+### 步驟 3：編寫伺服器端 Boss 核心邏輯 (Server Script)
+
+在 Roblox Studio 的 `ServerScriptService` 內新建一個 `Script`，命名為 `BossGameManager`。
+在 `ReplicatedStorage` 中新建一個 `RemoteEvent` 命名為 `ShowMathUI`，一個 `RemoteFunction` 命名為 `VerifyAnswer`。
+
+將以下提示詞發給 **Cursor Pro**：
+
+```text
+【Cursor 提示詞 3：Server 端 Boss 控制與驗證邏輯】
+I need a Roblox Server Script (Luau) named "BossGameManager" to handle the PVE Math Boss mechanics. 
+In game.ReplicatedStorage, I have:
+- A ModuleScript named "TSADatabase"
+- A RemoteEvent named "ShowMathUI"
+- A RemoteFunction named "VerifyAnswer"
+
+Please write the script to do the following:
+1. Create a setup for a standard Roblox Leaderboard (leaderstats) that tracks "Gold" for every player joining the game.
+2. Listen to a custom event or a bindable trigger when a specific Boss NPC (a Character with a Humanoid) gets hit by a bomb.
+3. When the Boss is hit and is NOT currently stunned:
+   - Set Boss.Humanoid.WalkSpeed = 0 to freeze it.
+   - Play a stun state (you can leave a comment where animations go).
+   - Randomly pick a question from the "TSADatabase" (either from 2024TSA or 2025TSA, and a random Q number).
+   - Save the correct answer and the current playing Player into a server-side variable.
+   - Fire game.ReplicatedStorage.ShowMathUI to that specific Player, passing the question's ImageId.
+4. Implement game.ReplicatedStorage.VerifyAnswer.OnServerInvoke:
+   - Check if the answer submitted by the player matches the saved correct answer.
+   - If Correct: Deal 50 damage to the Boss Humanoid, reward the player with 100 Gold in leaderstats, unfreeze the Boss (WalkSpeed = 16), and return true.
+   - If Wrong: Deduct 20 HP from the player's character as a penalty, keep the Boss frozen, and return false so they can try again.
+
+```
+
+---
+
+### 步驟 4：編寫客戶端答題 2D UI 介面邏輯 (LocalScript)
+
+在 Roblox Studio 的 `StarterGui` 內新建一個 `ScreenGui` 命名為 `MathQuizScreen`。裡面加一個 `Frame`，`Frame` 內放一個 `ImageLabel`（命名為 `QuestionImage`）和四個 `TextButton`（分別命名為 `A`, `B`, `C`, `D`）。在 `MathQuizScreen` 內新建一個 `LocalScript`。
+
+將以下提示詞發給 **Cursor Pro**：
+
+```text
+【Cursor 提示詞 4：Client 端 UI 彈窗與答題操作】
+I have a ScreenGui in Roblox named "MathQuizScreen". Inside it, there is a Frame (initially Visible = false). Inside the Frame, there is an ImageLabel named "QuestionImage" and four TextButtons named "A", "B", "C", and "D".
+
+Please write a Luau LocalScript to handle the UI interaction:
+1. Listen to game.ReplicatedStorage.ShowMathUI.OnClientEvent. When it receives an ImageId, set Frame.QuestionImage.Image to that ID, and set Frame.Visible = true.
+2. When the player clicks any of the four buttons (A, B, C, D):
+   - Invoke the server using game.ReplicatedStorage.VerifyAnswer:InvokeServer(button.Name).
+   - If the server returns true (Correct): Tween the Frame to scale down or simply set Frame.Visible = false.
+   - If the server returns false (Wrong): Make the clicked button briefly flash red using a TweenService color shift, then revert it back to white, letting the player know it's incorrect.
+
+```
+
+---
+
+# 🎯 下一步行動建議
+
+當你完成了上述的 MVP，並在 Roblox Studio 裡成功測試了「放炸彈炸 Boss $\rightarrow$ 彈出 TSA 題目圖片 $\rightarrow$ 點擊按鈕答題 $\rightarrow$ 獲得金幣」的完整閉環後，你的遊戲底層就徹底穩固了。
+
+接下來的升級路線建議如下：
+
+1. **對應真實答案**：將你其餘 4000 多題的 CSV 答案交給 步驟 2 的 Python 腳本。CSV 的列標題（如 `1A01中文答案`）和行號（`Q1`）可以完美被 Python 解析，生成無縫銜接的 `MathQuestionDatabase` 模組。
+2. **實裝網格地圖與炸彈判定**：利用 Cursor 幫你寫一個基於網格（Grid-based）的炸彈人放置與爆炸腳本，確保炸彈的十字形火焰（Region3 或 OverlapParams）在碰到 Boss 的 `HumanoidRootPart` 時，能正確調用 步驟 3 的受傷觸發器。
+3. **引入數據保存 (DataStore)**：讓 Cursor 為你的 `leaderstats` 金幣加上存檔代碼，這樣玩家退出遊戲、或者切換到 PVP 地圖時，辛苦答題賺來的錢才不會消失。
+4. **開發玩法 A（商店與 PVP）**：製作一個點擊購買的武器商店 UI，利用扣除金幣的方式更換玩家的炸彈屬性，開放一個供多人加入的實時對戰賽場。

@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Node (tools scripts)
+node_modules/
+
+# Editor / IDE
+.vscode/
+.idea/
+
+# Local secrets (never commit)
+.env
+.env.*
+*.pem
+
+# Roblox Studio local place (if added later)
+*.rbxl.lock
