@@ -107,4 +107,45 @@ ContextActionService:BindActionAtPriority(
 	Enum.KeyCode.E
 )
 
-print("[BomberControls] 極致操作防線加載成功！按【E 鍵】或【空白鍵】皆可放炸彈，跳躍已被 100% 禁用。")
+local UseBlinkBoots = Remotes:WaitForChild("UseBlinkBoots")
+
+local function handleBlink(actionName: string, inputState: Enum.UserInputState, inputObject: InputObject)
+	if inputState == Enum.UserInputState.Begin then
+		local char = player.Character
+		if not char then return Enum.ContextActionResult.Sink end
+
+		-- 檢查是否有閃現靴屬性
+		if not char:GetAttribute("HasBlinkBoots") then
+			return Enum.ContextActionResult.Pass
+		end
+
+		-- 如果主選單或答題開啟中，禁止閃現
+		local pg = player:FindFirstChild("PlayerGui")
+		local mmGui = findMainMenuScreenGui(pg)
+		if mmGui and mmGui.Enabled then
+			return Enum.ContextActionResult.Sink
+		end
+		if char:GetAttribute("AnsweringQuiz") then
+			return Enum.ContextActionResult.Sink
+		end
+
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		local rootPart = char:FindFirstChild("HumanoidRootPart")
+		if hum and hum.Health > 0 and rootPart then
+			print("[BomberControls] 按鍵觸發閃現 Q")
+			UseBlinkBoots:FireServer()
+		end
+	end
+	return Enum.ContextActionResult.Sink
+end
+
+-- 綁定 Q 鍵，並設置為高優先級
+ContextActionService:BindActionAtPriority(
+	"BlinkAction",
+	handleBlink,
+	false,
+	Enum.ContextActionPriority.High.Value,
+	Enum.KeyCode.Q
+)
+
+print("[BomberControls] 極致操作防線加載成功！按【E 鍵】或【空白鍵】皆可放炸彈，跳躍已被 100% 禁用，擁有閃現靴時按【Q 鍵】即可進行 3 格閃現。")

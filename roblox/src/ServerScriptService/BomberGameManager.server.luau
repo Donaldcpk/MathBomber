@@ -15,6 +15,18 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 local CollectionService = game:GetService("CollectionService")
+local PhysicsService = game:GetService("PhysicsService")
+
+-- 註冊進階道具所需之碰撞群組 (Quantum Phase Fluid)
+pcall(function()
+	PhysicsService:RegisterCollisionGroup("PhasePlayers")
+end)
+pcall(function()
+	PhysicsService:RegisterCollisionGroup("ActiveBombs")
+end)
+pcall(function()
+	PhysicsService:CollisionGroupSetCollidable("PhasePlayers", "ActiveBombs", false)
+end)
 
 -- ==================== 輔助函式：確保資料夾存在 ====================
 local function ensureFolder(parent: Instance, name: string): Folder
@@ -97,6 +109,8 @@ end
 local PlaceBomb = ensureRemoteEvent("PlaceBomb")
 local RequestNextLevel = ensureRemoteEvent("RequestNextLevel")
 local RequestRetry = ensureRemoteEvent("RequestRetry")
+local UseBlinkBoots = ensureRemoteEvent("UseBlinkBoots")
+local SyncAdvancedItems = ensureRemoteEvent("SyncAdvancedItems")
 
 local BossBombHit = Remotes:FindFirstChild("BossBombHit") :: BindableEvent?
 if not BossBombHit then
@@ -297,6 +311,8 @@ local function spawnPowerup(pos: Vector3)
 		table.insert(allowedTypes, "BombRange")
 		table.insert(allowedTypes, "MaxBombs")
 		table.insert(allowedTypes, "Heart")
+		table.insert(allowedTypes, "BlinkBoots")
+		table.insert(allowedTypes, "PhaseFluid")
 	else
 		-- PVP 模式：依據玩家最高通關關卡解鎖
 		if maxCleared >= 5 then
@@ -307,6 +323,12 @@ local function spawnPowerup(pos: Vector3)
 		end
 		if maxCleared >= 13 then
 			table.insert(allowedTypes, "MaxBombs")
+		end
+		if maxCleared >= 17 then
+			table.insert(allowedTypes, "BlinkBoots")
+		end
+		if maxCleared >= 21 then
+			table.insert(allowedTypes, "PhaseFluid")
 		end
 	end
 	
@@ -330,6 +352,12 @@ local function spawnPowerup(pos: Vector3)
 	elseif pType == "Heart" then
 		color = Color3.fromRGB(255, 80, 100) -- 紅色
 		labelText = "❤️"
+	elseif pType == "BlinkBoots" then
+		color = Color3.fromRGB(255, 200, 50) -- 金黃色
+		labelText = "👟"
+	elseif pType == "PhaseFluid" then
+		color = Color3.fromRGB(0, 255, 200) -- 青藍色
+		labelText = "🧪"
 	end
 	
 	local item = Instance.new("Part")
@@ -395,6 +423,58 @@ local function spawnPowerup(pos: Vector3)
 				hum.Health = math.min(hum.MaxHealth, hum.Health + 10)
 				print("[Powerup] 玩家恢復生命:", hum.Health)
 			end
+		elseif pType == "BlinkBoots" then
+			character:SetAttribute("HasBlinkBoots", true)
+			print("[Powerup] 玩家獲得閃現靴！按 Q 鍵閃現")
+			if SyncAdvancedItems then
+				SyncAdvancedItems:FireClient(touchPlayer, "BlinkBoots", true)
+			end
+		elseif pType == "PhaseFluid" then
+			print("[Powerup] 玩家獲得量子穿彈水！6 秒穿牆/穿彈")
+			character:SetAttribute("PhaseActive", true)
+			if SyncAdvancedItems then
+				SyncAdvancedItems:FireClient(touchPlayer, "PhaseFluid", true)
+			end
+			
+			-- 設為 PhasePlayers 碰撞組
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") then
+					pcall(function()
+						part.CollisionGroup = "PhasePlayers"
+					end)
+				end
+			end
+
+			-- 動態半透明效果
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+					part:SetAttribute("OriginalTransparency", part.Transparency)
+					part.Transparency = 0.5
+				end
+			end
+
+			-- 6秒後恢復
+			task.delay(6, function()
+				if character and character.Parent then
+					for _, part in ipairs(character:GetDescendants()) do
+						if part:IsA("BasePart") then
+							pcall(function()
+								part.CollisionGroup = "Default"
+							end)
+						end
+					end
+					for _, part in ipairs(character:GetDescendants()) do
+						if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+							local orig = part:GetAttribute("OriginalTransparency")
+							part.Transparency = orig or 0
+						end
+					end
+					character:SetAttribute("PhaseActive", false)
+					if SyncAdvancedItems then
+						SyncAdvancedItems:FireClient(touchPlayer, "PhaseFluid", false)
+					end
+				end
+			end)
 		end
 	end)
 
@@ -423,6 +503,58 @@ local function buildArena()
 		mapStyle = workspace:GetAttribute("PVP_MapIndex") or 1
 	else
 		mapStyle = ((level - 1) % 10) + 1
+	end
+
+	-- 控制 ArenaFloor 可見度與碰撞狀態
+	local floor = arena:FindFirstChild("ArenaFloor")
+	if floor and floor:IsA("BasePart") then
+		if mapStyle == 5 or mapStyle == 10 then
+			floor.Transparency = 1
+			floor.CanCollide = false
+		else
+			floor.Transparency = 0
+			floor.CanCollide = true
+		end
+	end
+
+	-- 若為地圖 5 或 10，生成個別小地磚
+	if mapStyle == 5 or mapStyle == 10 then
+		for gx = MAP_MIN_X, MAP_MAX_X do
+			for gz = MAP_MIN_Z, MAP_MAX_Z do
+				local tile = Instance.new("Part")
+				tile.Name = "FloorTile_" .. gx .. "_" .. gz
+				tile.Size = Vector3.new(CELL, 1, CELL)
+				tile.Position = Vector3.new(gx * CELL, 0, gz * CELL)
+				tile.Color = Color3.fromRGB(55, 55, 65)
+				tile.Material = Enum.Material.Concrete
+				tile.Anchored = true
+				tile.CanCollide = true
+				tile.Parent = gridFolder
+				CollectionService:AddTag(tile, "FloorTile")
+				tile:SetAttribute("GridX", gx)
+				tile:SetAttribute("GridZ", gz)
+				tile:SetAttribute("Collapsed", false)
+
+				tile.Touched:Connect(function(hit)
+					if tile.Name == "VoidPit" then
+						local char = hit.Parent
+						local hum = char and char:FindFirstChildOfClass("Humanoid")
+						if hum and hum.Health > 0 then
+							local inLobby = false
+							local p = Players:GetPlayerFromCharacter(char)
+							if p then
+								inLobby = p:GetAttribute("InLobby") == true
+							end
+							local isInvincible = char:GetAttribute("AnsweringQuiz") == true
+							if not inLobby and not isInvincible then
+								hum:TakeDamage(hum.MaxHealth)
+								print("[Void Touch] 💀 " .. char.Name .. " 墜入虛空")
+							end
+						end
+					end
+				end)
+			end
+		end
 	end
 
 	print(("[BomberGameManager] 🧱 正在建置 75x50 網格地圖... 模式: %s, 樣式索引: %d"):format(isPVP and "PVP" or "PVE", mapStyle))
@@ -1098,6 +1230,21 @@ local function runExplosion(owner: Player, bgx: number, bgz: number, range: numb
 			-- 生成火焰
 			runSingleFlame(owner, tx, tz, bossHitFlag)
 
+			-- 地圖 5/10 虛空塌陷判定
+			local level = workspace:GetAttribute("CurrentLevel") or 1
+			local isPVP = (level == 4)
+			local currentMapStyle = 1
+			if isPVP then
+				currentMapStyle = workspace:GetAttribute("PVP_MapIndex") or 1
+			else
+				currentMapStyle = ((level - 1) % 10) + 1
+			end
+			if currentMapStyle == 5 or currentMapStyle == 10 then
+				if _G.TriggerTileCollapse then
+					_G.TriggerTileCollapse(tx, tz)
+				end
+			end
+
 			-- 如果碰到的是可破壞箱子
 			if blocked and hitPart then
 				local destructible = hitPart:GetAttribute("Destructible")
@@ -1202,6 +1349,9 @@ local function placeBomb(player: Player, gx: number, gz: number)
 	bomb.Material = Enum.Material.SmoothPlastic
 	bomb:SetAttribute("Placer", player.Name)
 	bomb.CustomPhysicalProperties = PhysicalProperties.new(100, 0, 0, 100, 1)
+	pcall(function()
+		bomb.CollisionGroup = "ActiveBombs"
+	end)
 	bomb.Parent = bombsFolder
 
 	-- 當所有重疊的玩家皆踏出炸彈格子（水平距離 > 4.5 studs）後，解鎖實體碰撞
@@ -1271,6 +1421,79 @@ PlaceBomb.OnServerEvent:Connect(function(player: Player)
 	if root then
 		local gx, gz = worldToGrid(root.Position)
 		placeBomb(player, gx, gz)
+	end
+end)
+
+UseBlinkBoots.OnServerEvent:Connect(function(player: Player)
+	local char = player.Character
+	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+
+	-- 驗證屬性
+	if not char:GetAttribute("HasBlinkBoots") then return end
+
+	local root = char.HumanoidRootPart
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	local dir = hum and hum.MoveDirection.Magnitude > 0 and hum.MoveDirection.Unit or root.CFrame.LookVector.Unit
+	dir = Vector3.new(dir.X, 0, dir.Z).Unit
+
+	local currentPos = root.Position
+	local targetPos = currentPos + dir * 12 -- 3 cells * 4 studs = 12
+
+	local tgx, tgz = worldToGrid(targetPos)
+
+	-- 邊界限制
+	if tgx < MAP_MIN_X + 1 then tgx = MAP_MIN_X + 1 end
+	if tgx > MAP_MAX_X - 1 then tgx = MAP_MAX_X - 1 end
+	if tgz < MAP_MIN_Z + 1 then tgz = MAP_MIN_Z + 1 end
+	if tgz > MAP_MAX_Z - 1 then tgz = MAP_MAX_Z - 1 end
+
+	-- 檢查目標格是否有硬牆
+	local hasHardWall = false
+	for _, child in ipairs(gridFolder:GetChildren()) do
+		if child:IsA("BasePart") and child.Name == "HardWall" then
+			local cx, cz = worldToGrid(child.Position)
+			if cx == tgx and cz == tgz then
+				hasHardWall = true
+				break
+			end
+		end
+	end
+
+	if not hasHardWall then
+		-- 消耗閃現靴
+		char:SetAttribute("HasBlinkBoots", false)
+		
+		-- 傳送
+		local finalWorldPos = gridToWorld(tgx, tgz)
+		root.CFrame = CFrame.new(finalWorldPos.X, root.Position.Y, finalWorldPos.Z) * (root.CFrame - root.Position)
+
+		-- 產生閃現特效 (起點與終點)
+		local function spawnBlinkVFX(pos)
+			local effect = Instance.new("Part")
+			effect.Size = Vector3.new(3, 5, 3)
+			effect.Position = pos
+			effect.Color = Color3.fromRGB(255, 200, 50)
+			effect.Material = Enum.Material.Neon
+			effect.Transparency = 0.5
+			effect.Anchored = true
+			effect.CanCollide = false
+			effect.Parent = workspace
+			Debris:AddItem(effect, 0.4)
+		end
+		spawnBlinkVFX(currentPos)
+		spawnBlinkVFX(finalWorldPos)
+
+		-- 閃現音效
+		local sound = Instance.new("Sound")
+		sound.SoundId = "rbxassetid://9114221175" -- 閃現/傳送音效
+		sound.Volume = 0.6
+		sound.Parent = root
+		sound:Play()
+		Debris:AddItem(sound, 1.5)
+
+		-- 通知客戶端
+		SyncAdvancedItems:FireClient(player, "BlinkBoots", false)
+		print("[Blink Boots] 玩家 ", player.Name, " 閃現至 ", tgx, tgz)
 	end
 end)
 
@@ -1581,9 +1804,254 @@ local function removePlayerFromQueue(player: Player)
 			table.remove(pvpQueue, i)
 			break
 		end
+		end
 	end
 	updateLobbyStatus()
 end
+
+-- ==================== 本地私密房間組隊配對系統 (6位房號) ====================
+local CreatePVPRoom = Remotes:FindFirstChild("CreatePVPRoom") :: RemoteFunction?
+if not CreatePVPRoom then
+	CreatePVPRoom = Instance.new("RemoteFunction")
+	CreatePVPRoom.Name = "CreatePVPRoom"
+	CreatePVPRoom.Parent = Remotes
+end
+
+local JoinPVPRoom = Remotes:FindFirstChild("JoinPVPRoom") :: RemoteFunction?
+if not JoinPVPRoom then
+	JoinPVPRoom = Instance.new("RemoteFunction")
+	JoinPVPRoom.Name = "JoinPVPRoom"
+	JoinPVPRoom.Parent = Remotes
+end
+
+local LeavePVPRoom = ensureRemoteEvent("LeavePVPRoom")
+local StartPVPRoomMatch = ensureRemoteEvent("StartPVPRoomMatch")
+local UpdatePVPRoom = ensureRemoteEvent("UpdatePVPRoom")
+
+local Rooms = {} -- Key: 6位數字字串, Value: { host: Player, players: {Player}, mapIndex: number }
+
+-- 產生 6 位隨機房號
+local function generateRoomCode(): string
+	local code
+	repeat
+		code = string.format("%06d", math.random(100000, 999999))
+	until not Rooms[code]
+	return code
+end
+
+CreatePVPRoom.OnServerInvoke = function(player: Player)
+	-- 先將該玩家移出 PVP 匹配佇列
+	pcall(function()
+		for i, p in ipairs(pvpQueue) do
+			if p == player then
+				table.remove(pvpQueue, i)
+				updateLobbyStatus()
+				break
+			end
+		end
+		
+		-- 檢查玩家是否在別的房間，若是則先退出
+		for code, room in pairs(Rooms) do
+			for i, p in ipairs(room.players) do
+				if p == player then
+					table.remove(room.players, i)
+					if room.host == player then
+						Rooms[code] = nil -- 房主解散
+						for _, rp in ipairs(room.players) do
+							UpdatePVPRoom:FireClient(rp, code, "Destroyed")
+						end
+					else
+						for _, rp in ipairs(room.players) do
+							local playerNames = {}
+							for _, tempP in ipairs(room.players) do
+								table.insert(playerNames, tempP.Name)
+							end
+							UpdatePVPRoom:FireClient(rp, code, "RoomUpdated", playerNames, room.host.Name)
+						end
+					end
+					break
+				end
+			end
+		end
+	end)
+
+	local code = generateRoomCode()
+	Rooms[code] = {
+		host = player,
+		players = { player },
+		mapIndex = 1
+	}
+	print(("[PVP Room] 🏠 玩家 %s 建立了本地私密房間。房號: %s"):format(player.Name, code))
+	return true, code
+end
+
+JoinPVPRoom.OnServerInvoke = function(player: Player, code: string)
+	code = tostring(code)
+	local room = Rooms[code]
+	if not room then
+		return false, "房號不存在！"
+	end
+	if #room.players >= 4 then
+		return false, "該房間人數已滿 (上限 4 人)！"
+	end
+	
+	-- 確保移出舊房間
+	pcall(function()
+		for otherCode, r in pairs(Rooms) do
+			for i, p in ipairs(r.players) do
+				if p == player then
+					table.remove(r.players, i)
+					if r.host == player then
+						Rooms[otherCode] = nil
+						for _, rp in ipairs(r.players) do
+							UpdatePVPRoom:FireClient(rp, otherCode, "Destroyed")
+						end
+					else
+						for _, rp in ipairs(r.players) do
+							local playerNames = {}
+							for _, tempP in ipairs(r.players) do
+								table.insert(playerNames, tempP.Name)
+							end
+							UpdatePVPRoom:FireClient(rp, otherCode, "RoomUpdated", playerNames, r.host.Name)
+						end
+					end
+					break
+				end
+			end
+		end
+	end)
+
+	table.insert(room.players, player)
+	print(("[PVP Room] ➕ 玩家 %s 加入了房間 %s。目前人數: %d/4"):format(player.Name, code, #room.players))
+	
+	local playerNames = {}
+	for _, p in ipairs(room.players) do
+		table.insert(playerNames, p.Name)
+	end
+	
+	for _, p in ipairs(room.players) do
+		UpdatePVPRoom:FireClient(p, code, "RoomUpdated", playerNames, room.host.Name)
+	end
+	
+	return true, "成功加入房間！", playerNames, room.host.Name
+end
+
+LeavePVPRoom.OnServerEvent:Connect(function(player: Player)
+	for code, room in pairs(Rooms) do
+		for i, p in ipairs(room.players) do
+			if p == player then
+				table.remove(room.players, i)
+				print(("[PVP Room] 🛑 玩家 %s 離開了房間 %s"):format(player.Name, code))
+				if room.host == player then
+					Rooms[code] = nil
+					for _, rp in ipairs(room.players) do
+						UpdatePVPRoom:FireClient(rp, code, "Destroyed")
+					end
+				else
+					local playerNames = {}
+					for _, rp in ipairs(room.players) do
+						table.insert(playerNames, rp.Name)
+					end
+					for _, rp in ipairs(room.players) do
+						UpdatePVPRoom:FireClient(rp, code, "RoomUpdated", playerNames, room.host.Name)
+					end
+				end
+				break
+			end
+		end
+	end
+end)
+
+StartPVPRoomMatch.OnServerEvent:Connect(function(player: Player, mapIndex: number)
+	local targetCode = nil
+	local roomObj = nil
+	for code, room in pairs(Rooms) do
+		if room.host == player then
+			targetCode = code
+			roomObj = room
+			break
+		end
+	end
+	
+	if not targetCode or not roomObj then
+		print("[PVP Room] ❌ 啟動失敗：只有房主能開始戰鬥！")
+		return
+	end
+	
+	print(("[PVP Room] 🚀 房主 %s 啟動了房間 %s 的戰鬥！選擇地圖: %d"):format(player.Name, targetCode, mapIndex))
+	
+	mapIndex = tonumber(mapIndex) or 1
+	if mapIndex < 1 or mapIndex > 10 then mapIndex = 1 end
+	
+	local mapNames = {
+		"經典交叉網格", "傳送帶工廠", "萬花筒折射迷宮", "巡邏哨兵矩陣",
+		"算術虛空塌陷", "坐標天雷神殿", "因數诅咒之室", "終端收縮孤島",
+		"混沌變數 X 核心", "歐幾里得終極大亂鬥"
+	}
+	local selectedMapName = "⚔️ PVP [" .. (mapNames[mapIndex] or "經典交叉網格") .. "] ⚔️"
+	
+	for _, p in ipairs(roomObj.players) do
+		PVPStartMatch:FireClient(p, selectedMapName)
+	end
+	
+	task.delay(5, function()
+		workspace:SetAttribute("PVP_MapIndex", mapIndex)
+		workspace:SetAttribute("CurrentLevel", 4) -- PVP Mode
+		
+		for _, p in ipairs(roomObj.players) do
+			pcall(function()
+				p:SetAttribute("InLobby", false)
+				local char = p.Character
+				if char then
+					char:SetAttribute("BombRange", 3)
+					char:SetAttribute("MaxBombs", 1)
+					local hum = char:FindFirstChildOfClass("Humanoid")
+					if hum then
+						hum.MaxHealth = 100
+						hum.Health = 100
+					end
+				end
+			end)
+		end
+		
+		buildArena()
+		
+		local pvpSpawns = {
+			Vector3.new(-120, 3, -72),
+			Vector3.new(120, 3, 72),
+			Vector3.new(-120, 3, 72),
+			Vector3.new(120, 3, -72),
+		}
+		
+		for i, p in ipairs(roomObj.players) do
+			pcall(function()
+				local char = p.Character
+				local root = char and char:FindFirstChild("HumanoidRootPart")
+				local spawnPos = pvpSpawns[((i - 1) % #pvpSpawns) + 1]
+				if root and spawnPos then
+					root.CFrame = CFrame.new(spawnPos)
+				end
+			end)
+		end
+		
+		local botCountToSpawn = 4 - #roomObj.players
+		if botCountToSpawn > 0 then
+			print("[PVP Room] 🤖 自動生成 ", botCountToSpawn, " 個 AI 機器人填補戰局空缺！")
+			for i = 1, botCountToSpawn do
+				task.spawn(function()
+					task.wait(0.2 * i)
+					local spawnPosIndex = #roomObj.players + i
+					local spawnPos = pvpSpawns[((spawnPosIndex - 1) % #pvpSpawns) + 1]
+					if _G.SpawnBotAI then
+						_G.SpawnBotAI(spawnPos, "Bot_" .. i)
+					end
+				end)
+			end
+		end
+		
+		Rooms[targetCode] = nil
+	end)
+end)
 
 JoinPVPQueue.OnServerEvent:Connect(function(player: Player, mapIndex: number)
 	if isMatchStarting then return end
@@ -1918,6 +2386,109 @@ _G.StartPVESuddenDeath = function()
 			task.wait(1.5)
 		end
 	end)
+end
+
+_G.TriggerTileCollapse = function(gx: number, gz: number)
+	local tileName = "FloorTile_" .. gx .. "_" .. gz
+	local tile = gridFolder:FindFirstChild(tileName)
+	if tile and tile:IsA("BasePart") then
+		if tile:GetAttribute("Collapsed") == true then return end
+		tile:SetAttribute("Collapsed", true)
+
+		local origPos = tile.Position
+		-- 抖動 0.5s
+		task.spawn(function()
+			local t = 0
+			while t < 0.5 do
+				if not tile.Parent then return end
+				local dx = (math.random() - 0.5) * 0.3
+				local dz = (math.random() - 0.5) * 0.3
+				tile.Position = origPos + Vector3.new(dx, 0, dz)
+				task.wait(0.05)
+				t += 0.05
+			end
+			if not tile.Parent then return end
+			tile.Position = origPos
+
+			-- 變為不碰撞、半透明虛空 (Void Pit)
+			tile.Color = Color3.fromRGB(15, 15, 20) -- 深邃黑
+			tile.Material = Enum.Material.Glass
+			tile.Transparency = 0.85
+			tile.CanCollide = false
+			tile.Name = "VoidPit"
+			CollectionService:AddTag(tile, "VoidPit")
+
+			-- 檢查在此格站立的玩家/怪/Boss，直接致死/大額傷害
+			local function killEntityAt(char, isPlayer)
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				if hum and hum.Health > 0 then
+					local inLobby = false
+					if isPlayer then
+						local p = Players:GetPlayerFromCharacter(char)
+						if p then
+							inLobby = p:GetAttribute("InLobby") == true
+						end
+					end
+					local isInvincible = char:GetAttribute("AnsweringQuiz") == true
+					if not inLobby and not isInvincible then
+						hum:TakeDamage(hum.MaxHealth)
+						print("[Void Collapse] 💀 實體 " .. char.Name .. " 掉入虛空死亡")
+					end
+				end
+			end
+
+			-- 真人玩家
+			for _, p in ipairs(Players:GetPlayers()) do
+				local char = p.Character
+				local root = char and char:FindFirstChild("HumanoidRootPart")
+				if root then
+					local rx, rz = worldToGrid(root.Position)
+					if rx == gx and rz == gz then
+						killEntityAt(char, true)
+					end
+				end
+			end
+
+			-- PVP 機器人
+			local botsFolder = workspace:FindFirstChild("PVP_Bots")
+			if botsFolder then
+				for _, bot in ipairs(botsFolder:GetChildren()) do
+					local root = bot:FindFirstChild("HumanoidRootPart")
+					if root then
+						local rx, rz = worldToGrid(root.Position)
+						if rx == gx and rz == gz then
+							killEntityAt(bot, false)
+						end
+					end
+				end
+			end
+
+			-- PVE 小怪
+			local minionsFolder = arena:FindFirstChild("Minions")
+			if minionsFolder then
+				for _, minion in ipairs(minionsFolder:GetChildren()) do
+					local root = minion:FindFirstChild("HumanoidRootPart")
+					if root then
+						local rx, rz = worldToGrid(root.Position)
+						if rx == gx and rz == gz then
+							killEntityAt(minion, false)
+						end
+					end
+				end
+			end
+
+			-- PVE Boss
+			local bossRootPart = bossModel:FindFirstChild("HumanoidRootPart")
+			local bossHum = bossModel:FindFirstChildOfClass("Humanoid")
+			if bossRootPart and bossHum and bossHum.Health > 0 then
+				local rx, rz = worldToGrid(bossRootPart.Position)
+				if rx == gx and rz == gz then
+					bossHum:TakeDamage(150)
+					print("[Void Collapse] 💥 Boss 被虛空重創！")
+				end
+			end
+		end)
+	end
 end
 
 -- 伺服器啟動初始化地圖與小怪

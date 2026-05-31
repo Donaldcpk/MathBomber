@@ -597,38 +597,217 @@ for i = 1, 10 do
 	end)
 end
 
+-- ==================== 2.5 本地私密房間組隊配對系統 (Client) ====================
+local CreatePVPRoom = Remotes:WaitForChild("CreatePVPRoom") :: RemoteFunction
+local JoinPVPRoom = Remotes:WaitForChild("JoinPVPRoom") :: RemoteFunction
+local LeavePVPRoom = Remotes:WaitForChild("LeavePVPRoom") :: RemoteEvent
+local StartPVPRoomMatch = Remotes:WaitForChild("StartPVPRoomMatch") :: RemoteEvent
+local UpdatePVPRoom = Remotes:WaitForChild("UpdatePVPRoom") :: RemoteEvent
+
+local currentRoomCode = nil
+local isRoomHost = false
+local roomPlayers = {}
+
+-- 1. 左側匹配按鈕 (大小調整為原本的一半並偏左)
 local pvpQueueBtn = Instance.new("TextButton")
 pvpQueueBtn.Name = "Btn_Queue"
-pvpQueueBtn.Size = UDim2.new(0.8, 0, 0, 42)
-pvpQueueBtn.Position = UDim2.new(0.1, 0, 1, -55)
+pvpQueueBtn.Size = UDim2.new(0.45, -10, 0, 36)
+pvpQueueBtn.Position = UDim2.new(0.05, 0, 1, -45)
 pvpQueueBtn.BackgroundColor3 = Color3.fromRGB(120, 80, 200)
 pvpQueueBtn.Text = "⚔️ 加入匹配隊列 ⚔️"
 pvpQueueBtn.Font = Enum.Font.GothamBold
-pvpQueueBtn.TextSize = 14
+pvpQueueBtn.TextSize = 11
 pvpQueueBtn.TextColor3 = Color3.new(1, 1, 1)
 pvpQueueBtn.Parent = framePVP
 
 local qCorner = Instance.new("UICorner")
-qCorner.CornerRadius = UDim.new(0, 8)
+qCorner.CornerRadius = UDim.new(0, 6)
 qCorner.Parent = pvpQueueBtn
+
+-- 2. 右側本地房間控制面板 Frame
+local roomFrame = Instance.new("Frame")
+roomFrame.Name = "RoomFrame"
+roomFrame.Size = UDim2.new(0.45, 10, 0, 36)
+roomFrame.Position = UDim2.new(0.5, 5, 1, -45)
+roomFrame.BackgroundTransparency = 1
+roomFrame.Parent = framePVP
+
+-- 3. 房號輸入框 (TextBox)
+local roomInput = Instance.new("TextBox")
+roomInput.Size = UDim2.new(0.45, 0, 1, 0)
+roomInput.Position = UDim2.new(0, 0, 0, 0)
+roomInput.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+roomInput.TextColor3 = Color3.new(1, 1, 1)
+roomInput.PlaceholderText = "輸入6位房號"
+roomInput.PlaceholderColor3 = Color3.fromRGB(100, 100, 120)
+roomInput.Text = ""
+roomInput.Font = Enum.Font.GothamBold
+roomInput.TextSize = 10
+roomInput.Parent = roomFrame
+
+local ric = Instance.new("UICorner")
+ric.CornerRadius = UDim.new(0, 6)
+ric.Parent = roomInput
+
+local ris = Instance.new("UIStroke")
+ris.Color = Color3.fromRGB(80, 80, 100)
+ris.Thickness = 1
+ris.Parent = roomInput
+
+-- 4. 創房按鈕 (TextButton)
+local createRoomBtn = Instance.new("TextButton")
+createRoomBtn.Size = UDim2.new(0.25, -4, 1, 0)
+createRoomBtn.Position = UDim2.new(0.45, 4, 0, 0)
+createRoomBtn.BackgroundColor3 = Color3.fromRGB(34, 139, 34)
+createRoomBtn.Text = "創房"
+createRoomBtn.Font = Enum.Font.GothamBold
+createRoomBtn.TextSize = 10
+createRoomBtn.TextColor3 = Color3.new(1, 1, 1)
+createRoomBtn.Parent = roomFrame
+
+local crc = Instance.new("UICorner")
+crc.CornerRadius = UDim.new(0, 6)
+crc.Parent = createRoomBtn
+
+-- 5. 加入按鈕 (TextButton)
+local joinRoomBtn = Instance.new("TextButton")
+joinRoomBtn.Size = UDim2.new(0.25, -4, 1, 0)
+joinRoomBtn.Position = UDim2.new(0.7, 4, 0, 0)
+joinRoomBtn.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
+joinRoomBtn.Text = "加入"
+joinRoomBtn.Font = Enum.Font.GothamBold
+joinRoomBtn.TextSize = 10
+joinRoomBtn.TextColor3 = Color3.new(1, 1, 1)
+joinRoomBtn.Parent = roomFrame
+
+local jrc = Instance.new("UICorner")
+jrc.CornerRadius = UDim.new(0, 6)
+jrc.Parent = joinRoomBtn
 
 local isQueued = false
 
+-- 6. 更新房間動態 UI 狀態機
+local function updateRoomUI()
+	if currentRoomCode then
+		-- 已在房間內
+		roomInput.Text = currentRoomCode
+		roomInput.Active = false
+		createRoomBtn.Text = "退房"
+		createRoomBtn.BackgroundColor3 = Color3.fromRGB(150, 40, 40)
+		joinRoomBtn.Visible = false
+		
+		if isRoomHost then
+			pvpQueueBtn.Text = "🚀 開始戰鬥 🚀"
+			pvpQueueBtn.BackgroundColor3 = Color3.fromRGB(46, 125, 50)
+			pvpStatus.Text = ("🏠 房號：%s (您是房主) | 成員：%s\n請點點卡片選地圖，再按「開始戰鬥」啟動！"):format(
+				currentRoomCode,
+				table.concat(roomPlayers, ", ")
+			)
+		else
+			pvpQueueBtn.Text = "⏳ 等待房主開始..."
+			pvpQueueBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+			pvpStatus.Text = ("🏠 房號：%s | 房主：%s | 成員：%s\n請等待房主啟動戰鬥..."):format(
+				currentRoomCode,
+				roomPlayers[1] or "未知",
+				table.concat(roomPlayers, ", ")
+			)
+		end
+	else
+		-- 未在房間內
+		roomInput.Text = ""
+		roomInput.Active = true
+		createRoomBtn.Text = "創房"
+		createRoomBtn.BackgroundColor3 = Color3.fromRGB(34, 139, 34)
+		joinRoomBtn.Visible = true
+		
+		if isQueued then
+			pvpQueueBtn.Text = "🛑 取消匹配..."
+			pvpQueueBtn.BackgroundColor3 = Color3.fromRGB(150, 40, 40)
+		else
+			pvpQueueBtn.Text = "⚔️ 加入匹配隊列 ⚔️"
+			pvpQueueBtn.BackgroundColor3 = Color3.fromRGB(120, 80, 200)
+			pvpStatus.Text = "請選擇對戰地圖 style，然後點選「加入匹配隊列」進行極限對決："
+		end
+	end
+end
+
+-- 7. 點擊開始戰鬥/加入匹配處理
 pvpQueueBtn.MouseButton1Click:Connect(function()
 	clickSound:Play()
-	if not isQueued then
-		-- 加入匹配
-		JoinPVPQueue:FireServer(selectedPVPMapIndex)
-		isQueued = true
-		pvpQueueBtn.Text = "🛑 取消匹配..."
-		pvpQueueBtn.BackgroundColor3 = Color3.fromRGB(150, 40, 40)
+	if currentRoomCode then
+		if isRoomHost then
+			-- 房主直接開始戰鬥！
+			StartPVPRoomMatch:FireServer(selectedPVPMapIndex)
+		end
 	else
-		-- 離開匹配
-		LeavePVPQueue:FireServer()
-		isQueued = false
-		pvpQueueBtn.Text = "⚔️ 加入匹配隊列 ⚔️"
-		pvpQueueBtn.BackgroundColor3 = Color3.fromRGB(120, 80, 200)
-		pvpStatus.Text = "已取消匹配。請點選上方卡片選擇對戰地圖，並加入匹配隊列："
+		if not isQueued then
+			-- 加入常規匹配
+			JoinPVPQueue:FireServer(selectedPVPMapIndex)
+			isQueued = true
+			updateRoomUI()
+		else
+			-- 離開常規匹配
+			LeavePVPQueue:FireServer()
+			isQueued = false
+			updateRoomUI()
+		end
+	end
+end)
+
+-- 8. 創房 / 退房點擊處理
+createRoomBtn.MouseButton1Click:Connect(function()
+	clickSound:Play()
+	if currentRoomCode then
+		-- 離開房間 / 退房
+		LeavePVPRoom:FireServer()
+		currentRoomCode = nil
+		isRoomHost = false
+		roomPlayers = {}
+		updateRoomUI()
+	else
+		-- 創房
+		local success, code = CreatePVPRoom:InvokeServer()
+		if success then
+			currentRoomCode = code
+			isRoomHost = true
+			roomPlayers = { player.Name }
+			updateRoomUI()
+		end
+	end
+end)
+
+-- 9. 加入房間點擊處理
+joinRoomBtn.MouseButton1Click:Connect(function()
+	clickSound:Play()
+	local code = roomInput.Text
+	if #code == 6 and tonumber(code) then
+		local success, msg, players, hostName = JoinPVPRoom:InvokeServer(code)
+		if success then
+			currentRoomCode = code
+			isRoomHost = (hostName == player.Name)
+			roomPlayers = players
+			updateRoomUI()
+		else
+			pvpStatus.Text = "⚠️ " .. msg
+		end
+	else
+		pvpStatus.Text = "⚠️ 請輸入正確的 6 位房號！"
+	end
+end)
+
+-- 10. 監聽房間動態更新事件
+UpdatePVPRoom.OnClientEvent:Connect(function(code, action, param1, param2)
+	if action == "Destroyed" then
+		currentRoomCode = nil
+		isRoomHost = false
+		roomPlayers = {}
+		updateRoomUI()
+		pvpStatus.Text = "⚠️ 房間已被房主解散！"
+	elseif action == "RoomUpdated" then
+		currentRoomCode = code
+		roomPlayers = param1
+		isRoomHost = (param2 == player.Name)
+		updateRoomUI()
 	end
 end)
 
@@ -640,8 +819,10 @@ end)
 
 PVPStartMatch.OnClientEvent:Connect(function(selectedMapName)
 	isQueued = false
-	pvpQueueBtn.Text = "⚔️ 加入匹配隊列 ⚔️"
-	pvpQueueBtn.BackgroundColor3 = Color3.fromRGB(120, 80, 200)
+	currentRoomCode = nil
+	isRoomHost = false
+	roomPlayers = {}
+	updateRoomUI()
 	pvpStatus.Text = "🎮 匹配成功！即將進入 PVP 萬花筒競技場！"
 
 	-- 開始 5 秒倒數

@@ -190,6 +190,69 @@ if SyncPVETimer then
 	end)
 end
 
+-- ==================== 1.2 進階道具客戶端同步與頂部 Toast 提示 ====================
+local SyncAdvancedItems = Remotes:WaitForChild("SyncAdvancedItems", 10) :: RemoteEvent?
+
+local function showCenterNotification(msg: string, color: Color3?)
+	local screenGui = script.Parent :: ScreenGui
+	if not screenGui then return end
+	
+	local notification = Instance.new("TextLabel")
+	notification.Size = UDim2.new(0, 340, 0, 45)
+	notification.Position = UDim2.new(0.5, -170, 0.15, 0)
+	notification.BackgroundColor3 = color or Color3.fromRGB(30, 30, 30)
+	notification.TextColor3 = Color3.new(1, 1, 1)
+	notification.Font = Enum.Font.GothamBold
+	notification.TextSize = 14
+	notification.Text = msg
+	notification.BorderSizePixel = 0
+	notification.Parent = screenGui
+	
+	local uiCorner = Instance.new("UICorner")
+	uiCorner.CornerRadius = UDim.new(0, 8)
+	uiCorner.Parent = notification
+	
+	local uiStroke = Instance.new("UIStroke")
+	uiStroke.Color = Color3.new(1, 1, 1)
+	uiStroke.Thickness = 1.5
+	uiStroke.Parent = notification
+	
+	notification.Transparency = 1
+	uiStroke.Transparency = 1
+	notification.TextTransparency = 1
+	
+	TweenService:Create(notification, TweenInfo.new(0.3), { Transparency = 0.1, TextTransparency = 0, BackgroundTransparency = 0.1 }):Play()
+	TweenService:Create(uiStroke, TweenInfo.new(0.3), { Transparency = 0.2 }):Play()
+	
+	task.delay(2.5, function()
+		local t = TweenService:Create(notification, TweenInfo.new(0.4), { Transparency = 1, TextTransparency = 1, BackgroundTransparency = 1 })
+		local s = TweenService:Create(uiStroke, TweenInfo.new(0.4), { Transparency = 1 })
+		t:Play()
+		s:Play()
+		t.Completed:Connect(function()
+			notification:Destroy()
+		end)
+	end)
+end
+
+if SyncAdvancedItems then
+	SyncAdvancedItems.OnClientEvent:Connect(function(itemType: string, active: boolean)
+		if itemType == "BlinkBoots" then
+			if active then
+				showCenterNotification("👟 獲得閃現靴！按 Q 鍵可向前閃現 3 格！", Color3.fromRGB(218, 165, 32))
+			else
+				showCenterNotification("⚡ 閃現靴能量已消耗！", Color3.fromRGB(120, 120, 120))
+			end
+		elseif itemType == "PhaseFluid" then
+			if active then
+				showCenterNotification("🧪 獲得量子穿彈水！6 秒內可穿越所有炸彈！", Color3.fromRGB(0, 191, 255))
+			else
+				showCenterNotification("🛡️ 量子穿彈效果已失效！", Color3.fromRGB(120, 120, 120))
+			end
+		end
+	end)
+end
+
 -- ==================== 1.5 HUD 可見度與大廳自動同步 ====================
 task.spawn(function()
 	local mainMenu = playerGui:WaitForChild("MainMenuGui", 10)

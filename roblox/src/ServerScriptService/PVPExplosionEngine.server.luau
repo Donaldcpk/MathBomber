@@ -202,6 +202,21 @@ local function TriggerGridExplosion(originGridX: number, originGridY: number, ma
 		local gx, gy = cellVec.X, cellVec.Y
 		local center = gridToWorld(gx, gy)
 
+		-- 地圖 5/10 虛空塌陷判定
+		local level = workspace:GetAttribute("CurrentLevel") or 1
+		local isPVP = (level == 4)
+		local currentMapStyle = 1
+		if isPVP then
+			currentMapStyle = workspace:GetAttribute("PVP_MapIndex") or 1
+		else
+			currentMapStyle = ((level - 1) % 10) + 1
+		end
+		if currentMapStyle == 5 or currentMapStyle == 10 then
+			if _G.TriggerTileCollapse then
+				_G.TriggerTileCollapse(gx, gy)
+			end
+		end
+
 		-- VFX Spawning: 建立炫麗發光爆炸體與粒子
 		local vfx = Instance.new("Part")
 		vfx.Name = "PVP_ExplosionFlame"
